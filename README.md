@@ -1,6 +1,6 @@
 # ChiragPay Autopay Recovery Demo
-
-A small Node.js and Twilio demonstration for failed-autopay follow-up. Transaction records, call attempts, answers, and transcripts are stored in `data.json`.
+Voice Ai agent for recovering  autopay failed transaction.
+A  Node.js and Twilio demonstration for failed-autopay follow-up. Transaction records, call attempts, answers, and transcripts are stored in `data.json`.
 
 The first server start creates ten fictional records using reserved example phone numbers. Customer phone numbers are stored for the record only; outbound calls always go to the single `DEMO_PHONE` configured by the operator.
 
@@ -49,6 +49,8 @@ Copy `env.example` to `.env` and fill in your Twilio Account SID, Auth Token, Tw
 TWILIO_TOKEN=
 TWILIO_FROM=
 PUBLIC_URL=
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
 
 # Required before exposing the dashboard through a public tunnel.
 DASHBOARD_USERNAME=
@@ -99,6 +101,14 @@ ALLOW_OUTBOUND_CALLS=true
 Restart the server and use **Call demo phone**.
 
 The UI requires the exact destination and an explicit authorization checkbox; the server independently checks both.
+
+## LLM-Powered Phone Conversation
+
+The phone agent uses OpenAI's **GPT-4o mini** model by default. Set `OPENAI_API_KEY` in `.env` to enable it. The model can be changed with `OPENAI_MODEL` to another model available to your OpenAI account; if unset, it defaults to `gpt-4o-mini`.
+
+Twilio converts the caller's speech to text and speaks the agent's response. After the caller explicitly consents, the app sends the recognized utterance, recent conversation transcript, and limited transaction facts (amount, failure reason, and status) to the OpenAI Chat Completions API. The model returns a short spoken reply and a structured intent. It can answer questions about the supplied facts, continue the conversation, or identify a clear request to record pay-now intent, schedule a follow-up, or stop the call.
+
+The server applies payment-intent and retry-date changes; the model does not process payments, confirm settlement, or mark a transaction paid. Do not send payment credentials or other secrets in conversation. If `OPENAI_API_KEY` is missing, the phone call uses the original scripted prompts. If an OpenAI request fails during a call, the app falls back to a scripted pay-now or retry prompt. The local **Simulate agent** workflow remains scripted and does not call OpenAI.
 
 ## Call and Data Safety
 
