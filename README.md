@@ -4,6 +4,10 @@ A small Node.js and Twilio demonstration for failed-autopay follow-up. Transacti
 
 The first server start creates ten fictional records using reserved example phone numbers. Customer phone numbers are stored for the record only; outbound calls always go to the single `DEMO_PHONE` configured by the operator.
 
+## Application Preview
+
+[View Application](application.pdf)
+
 ## Run the Local Demo
 
 Requires **Node.js 20.6 or newer**.
