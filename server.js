@@ -2,6 +2,7 @@ const express = require("express");
 const fs = require("node:fs");
 const path = require("node:path");
 const twilio = require("twilio");
+const OpenAI = require("openai");
 
 if (fs.existsSync(".env")) process.loadEnvFile?.(".env");
 
@@ -12,6 +13,8 @@ const PUBLIC_URL = (process.env.PUBLIC_URL || "").replace(/\/$/, "");
 const DEMO_PHONE = process.env.DEMO_PHONE || "";
 const DASHBOARD_USERNAME = process.env.DASHBOARD_USERNAME || "";
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "";
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const twilioConfigured = Boolean(process.env.TWILIO_SID && process.env.TWILIO_TOKEN && process.env.TWILIO_FROM);
 const client = twilioConfigured ? twilio(process.env.TWILIO_SID, process.env.TWILIO_TOKEN) : null;
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -247,7 +250,47 @@ function endCall(transactionId, text) {
   return response;
 }
 
-app.post("/voice", verifyTwilioWebhook, (req, res) => {
+async function getConversationTurn(record, said) {
+  if (!openai) return null;
+
+  const conversation = (record.call?.transcript || "").trim().split("\n").slice(-16).join("\n");
+  try {
+    const completion = await openai.chat.completions.create({
+      model: OPENAI_MODEL,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: [
+            "You are a concise, polite phone assistant discussing one failed autopay transaction. The customer has already consented to continue.",
+            `Known facts: amount ${record.currency} ${record.amount}; failure reason ${record.failureReason.replaceAll("_", " ")}; current status ${record.status}.`,
+            "Answer questions using only these facts and the conversation. Do not invent a payment method, due date, policy, cause, or account detail.",
+            "This demo cannot process payments, verify settlement, or send a payment link. You may record the customer's intent to pay now, or schedule an operator follow-up for a specific number of days from 1 to 365.",
+            "Never ask for or accept card numbers, bank credentials, passwords, or other payment secrets. If offered, tell the caller not to share them.",
+            "Return one JSON object with keys reply (short spoken response), intent (continue, pay_now, schedule_retry, or decline), and retryDays (integer only for schedule_retry, otherwise null).",
+            "Use pay_now only for a clear request to pay now. Use schedule_retry only when the caller clearly requests a future retry and gives a specific number of days. For questions, uncertainty, or missing timing, use continue and answer briefly, then ask whether they want to record pay-now intent or a retry date.",
+            "Use decline when the caller asks to stop or end the call. Do not claim that payment has been made."
+          ].join(" ")
+        },
+        {
+          role: "user",
+          content: `Recent conversation:\n${conversation}\nLatest caller response: ${said}`
+        }
+      ],
+      max_tokens: 220,
+      temperature: 0.2
+    });
+
+    const result = JSON.parse(completion.choices[0]?.message?.content || "{}");
+    if (typeof result.reply !== "string" || !["continue", "pay_now", "schedule_retry", "decline"].includes(result.intent)) return null;
+    return { ...result, reply: result.reply.trim().slice(0, 500) };
+  } catch (error) {
+    console.error("OpenAI conversation request failed:", error.message);
+    return null;
+  }
+}
+
+app.post("/voice", verifyTwilioWebhook, async (req, res) => {
   const transactionId = String(req.query.id || "");
   const step = String(req.query.step || "intro");
   const said = String(req.body.SpeechResult || "").trim();
@@ -257,10 +300,40 @@ app.post("/voice", verifyTwilioWebhook, (req, res) => {
   if (said) updateRecord(transactionId, item => logTurn(item, "Customer", said));
 
   let response;
-  if (step === "intro") response = ask(transactionId, "Hello. This is an automated payment reminder. Is it okay to continue?", "consent");
+  if (step === "intro") response = ask(transactionId, "Hello. This is an automated payment assistant. With your consent, I can discuss this failed autopay. Your speech and limited transaction details may be processed by an AI service to answer questions. Is it okay to continue?", "consent");
   else if (step === "consent") {
     if (!YES.test(said)) response = endCall(transactionId, "Understood. We will not continue this call. Goodbye.");
+    else if (openai) response = ask(transactionId, `Thank you. The autopay for ${record.customerName}, transaction ${record.transactionId}, failed because ${record.failureReason.replaceAll("_", " ")}. How can I help you today?`, "conversation");
     else response = ask(transactionId, `The autopay for ${record.customerName}, transaction ${record.transactionId}, failed because ${record.failureReason.replaceAll("_", " ")}. What do you think caused the issue?`, "reason");
+  } else if (step === "conversation") {
+    const turn = await getConversationTurn(record, said);
+    if (!turn) {
+      response = ask(transactionId, "I'm having trouble answering questions right now. Would you like to pay now, or should we retry later? If later, after how many days?", "retry");
+    } else if (turn.intent === "decline") {
+      response = endCall(transactionId, turn.reply || "Understood. Goodbye.");
+    } else if (turn.intent === "pay_now") {
+      updateRecord(transactionId, item => {
+        item.call.answers.retryAfterDays = 0;
+        item.status = "payment_requested";
+        item.paymentRequestedAt = new Date().toISOString();
+        item.retryOn = null;
+      });
+      response = endCall(transactionId, "Thank you. I have recorded that you want to pay now. This transaction will stay open until payment is confirmed. Goodbye.");
+    } else if (turn.intent === "schedule_retry" && Number.isInteger(turn.retryDays) && turn.retryDays >= 1 && turn.retryDays <= 365) {
+      const retryOn = new Date(Date.now() + turn.retryDays * 86400000).toISOString().slice(0, 10);
+      updateRecord(transactionId, item => {
+        item.call.answers.retryAfterDays = turn.retryDays;
+        item.status = "retry_scheduled";
+        item.paymentRequestedAt = null;
+        item.retryOn = retryOn;
+      });
+      response = endCall(transactionId, `Okay. An operator follow-up is scheduled in ${turn.retryDays} days. Goodbye.`);
+    } else {
+      const reply = turn.intent === "schedule_retry"
+        ? "I can schedule a follow-up up to 365 days from now. How many days should I record?"
+        : turn.reply || "Would you like to pay now, or schedule a follow-up?";
+      response = ask(transactionId, reply, "conversation");
+    }
   } else if (step === "reason") {
     updateRecord(transactionId, item => { item.call.answers.customerExplanation = said; });
     response = ask(transactionId, "Would you like to pay now, or should we retry later? If later, after how many days?", "retry");
@@ -277,7 +350,8 @@ app.post("/voice", verifyTwilioWebhook, (req, res) => {
       });
       response = endCall(transactionId, payNow ? "Thank you. I have recorded that you want to pay now. This transaction will stay open until payment is confirmed. Goodbye." : `Okay. A follow-up is scheduled in ${days} days. Goodbye.`);
     }
-  } else response = endCall(transactionId, "Thank you. Goodbye.");
+  } else if (step === "repeat") response = ask(transactionId, "Sorry, I didn't catch that. How can I help with this failed autopay?", "conversation");
+  else response = endCall(transactionId, "Thank you. Goodbye.");
 
   res.type("text/xml").send(response.toString());
 });

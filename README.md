@@ -19,11 +19,11 @@ Mark a transaction paid only after confirming payment in the payment system you 
 
 Only enable this against a number you control or have explicit permission to call. Never use the fictional customer numbers for outbound calls.
 
-1. Copy `env.example` to `.env` and fill in your Twilio Account SID, Auth Token, Twilio caller ID, and the one authorized destination as `DEMO_PHONE`.
+1. Copy `env.example` to `.env` and fill in your Twilio Account SID, Auth Token, Twilio caller ID, OpenAI API key, and the one authorized destination as `DEMO_PHONE`. `OPENAI_MODEL` defaults to `gpt-4o-mini` and can be changed to another model available to your account.
 2. Set `PUBLIC_URL` to the HTTPS forwarding URL for your local server. For example, run `ngrok http 3000` in a separate terminal and use its HTTPS URL.
 3. Set a unique `DASHBOARD_USERNAME` and strong `DASHBOARD_PASSWORD`. The dashboard and API use HTTP Basic authentication when these are set; Twilio `/voice` and `/status` callbacks are checked against Twilio request signatures.
 4. Keep `ALLOW_OUTBOUND_CALLS=false` until the Twilio credentials, public callback URL, and destination are verified. Then set it to `true`, restart the server, and use **Call demo phone**. The UI requires the exact destination and an explicit authorization checkbox; the server independently checks both.
 
-Twilio speech recognition and synthesis handle the live phone dialogue. The app does not record call audio. The customer must consent to continue before transaction details are discussed. Do not collect card numbers, bank credentials, or other payment secrets in a call. Twilio trial accounts may only call verified destinations and may require an introductory trial message.
+Twilio speech recognition and synthesis handle the live phone audio. After the caller consents, the app sends their recognized speech and limited transaction facts (amount, failure reason, and status) to OpenAI to answer questions and understand pay-now or retry requests. The app does not record call audio. Without an OpenAI key, calls use the original scripted prompts; if the model is unavailable during a call, the agent falls back to the scripted retry prompt. Do not collect card numbers, bank credentials, or other payment secrets in a call. Saying “pay now” records intent only; the model cannot charge a card, verify payment, or mark a transaction paid. Twilio trial accounts may only call verified destinations and may require an introductory trial message.
 
 The public tunnel makes the service reachable from the internet while active. Use fictional data for this demo, protect the dashboard with credentials, and stop the tunnel when finished. Outbound calling is disabled by default.
