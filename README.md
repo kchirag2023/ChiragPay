@@ -6,7 +6,7 @@ The first server start creates ten fictional records using reserved example phon
 
 ## Application Preview
 
-[View Application](application.pdf)
+[View Application](application_preview.pdf)
 
 ## Run the Local Demo
 
