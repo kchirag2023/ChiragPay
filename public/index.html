@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f7f4">
+  <title>ChiragPay | Autopay recovery</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Tandem recovery home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>ChiragPay<span class="brand-divider">/</span><span class="brand-sub">RECOVERY OPS</span></span>
+      </a>
+      <div class="topbar-right">
+        <span class="environment"><span class="environment-dot"></span> DEMO WORKSPACE</span>
+        <button id="reload-button" class="icon-button" type="button" aria-label="Refresh transactions" title="Refresh transactions">↻</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">PAYMENTS <span>/</span> RECOVERY</p>
+          <h1>Failed autopay queue</h1>
+          <p class="heading-note">Review failed transactions and follow up with customers.</p>
+        </div>
+        <button id="add-button" class="primary-button" type="button"><span aria-hidden="true">+</span> Add transaction</button>
+      </section>
+
+      <section class="metrics" aria-label="Queue summary">
+        <div class="metric"><span class="metric-label">OPEN BALANCE</span><strong id="metric-balance">—</strong><span class="metric-note">across unpaid transactions</span></div>
+        <div class="metric"><span class="metric-label">NEEDS FOLLOW-UP</span><strong id="metric-open">—</strong><span class="metric-note">pending or retry scheduled</span></div>
+        <div class="metric"><span class="metric-label">CALL ATTEMPTS</span><strong id="metric-attempts">—</strong><span class="metric-note">voice and simulated calls</span></div>
+        <div class="metric metric-accent"><span class="metric-label">RECOVERED</span><strong id="metric-recovered">—</strong><span class="metric-note">marked paid</span></div>
+      </section>
+
+      <section class="queue-section">
+        <div class="queue-toolbar">
+          <div class="filter-tabs" role="tablist" aria-label="Filter transactions">
+            <button class="filter-tab active" type="button" data-filter="all">All <span id="count-all">0</span></button>
+            <button class="filter-tab" type="button" data-filter="open">Open <span id="count-open">0</span></button>
+            <button class="filter-tab" type="button" data-filter="retry_scheduled">Retry scheduled <span id="count-retry">0</span></button>
+            <button class="filter-tab" type="button" data-filter="paid">Paid <span id="count-paid">0</span></button>
+          </div>
+          <label class="search-field"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search transactions" autocomplete="off"><kbd>/</kbd></label>
+        </div>
+
+        <div class="table-frame">
+          <table>
+            <thead><tr>
+              <th>TRANSACTION</th><th>CUSTOMER</th><th>FAILURE REASON</th><th>AMOUNT</th><th>ATTEMPTS</th><th>STATUS</th><th><span class="sr-only">Open details</span></th>
+            </tr></thead>
+            <tbody id="transaction-rows"></tbody>
+          </table>
+          <div id="empty-state" class="empty-state" hidden>
+            <span class="empty-mark">+</span><strong>No transactions here</strong><span>Try another filter or add a failed transaction.</span>
+          </div>
+        </div>
+        <div class="table-foot"><span id="result-count">Showing 0 transactions</span><span><span class="safe-dot"></span> Customer phone numbers are never dialed by this demo.</span></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="scrim" class="scrim" hidden></div>
+  <aside id="details-panel" class="details-panel" aria-labelledby="detail-title" aria-hidden="true">
+    <div class="panel-head">
+      <div><p class="eyebrow">TRANSACTION DETAILS</p><h2 id="detail-title">—</h2></div>
+      <button class="icon-button close-panel" type="button" aria-label="Close details">×</button>
+    </div>
+    <div id="detail-content" class="panel-content"></div>
+  </aside>
+
+  <dialog id="add-dialog" class="modal">
+    <form id="transaction-form" method="dialog">
+      <div class="modal-heading"><div><p class="eyebrow">QUEUE INTAKE</p><h2>Add failed transaction</h2></div><button class="icon-button" type="button" data-close-dialog="add-dialog" aria-label="Close">×</button></div>
+      <div class="form-grid">
+        <label>Transaction ID<input name="transactionId" required placeholder="TXN-1042"></label>
+        <label>Product ID<input name="productId" required placeholder="PRD-204"></label>
+        <label>Customer ID<input name="customerId" required placeholder="CUS-318"></label>
+        <label>Customer name<input name="customerName" required placeholder="Customer name"></label>
+        <label class="span-two">Customer phone number<input name="customerPhoneNumber" required type="tel" placeholder="+91 98765 43210"><small>Stored with the transaction. Live calls only go to the configured demo number.</small></label>
+        <label>Amount (INR)<input name="amount" required type="number" min="1" step="0.01" placeholder="999"></label>
+        <label>Failure reason<select name="failureReason" required><option value="">Choose reason</option><option value="insufficient_funds">Insufficient funds</option><option value="card_expired">Card expired</option><option value="bank_unavailable">Bank unavailable</option><option value="payment_method_declined">Payment method declined</option><option value="other">Other / unknown</option></select></label>
+      </div>
+      <div class="modal-actions"><button class="secondary-button" type="button" data-close-dialog="add-dialog">Cancel</button><button class="primary-button" type="submit">Save transaction <span aria-hidden="true">→</span></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="call-dialog" class="modal call-modal">
+    <form id="call-form" method="dialog">
+      <div class="modal-heading"><div><p class="eyebrow">LIVE PHONE CALL</p><h2>Confirm demo destination</h2></div><button class="icon-button" type="button" data-close-dialog="call-dialog" aria-label="Close">×</button></div>
+      <p class="call-warning">The call will go only to <strong>DEMO_PHONE</strong>, never to the customer phone saved on this transaction. Call only a number you control or have permission to use.</p>
+      <label>Configured demo phone number<input id="confirm-number" required type="tel" autocomplete="off" placeholder="Type the exact DEMO_PHONE from .env"></label>
+      <label class="consent-check"><input id="authorize-call" type="checkbox" required><span>I control this number or have explicit permission to call it.</span></label>
+      <div class="modal-actions"><button class="secondary-button" type="button" data-close-dialog="call-dialog">Cancel</button><button class="primary-button" type="submit">Place call <span aria-hidden="true">↗</span></button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
